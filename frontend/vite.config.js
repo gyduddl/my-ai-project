@@ -6,4 +6,12 @@ export default defineConfig({
     build:{
         outDir:'build',
     },
+    server: {
+        proxy: {
+            '/download': {
+                target: 'http://localhost:8000', // 백엔드 포트로 변경
+                changeOrigin: true,
+            }
+        }
+    }
 })

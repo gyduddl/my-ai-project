@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  my-db:
+    image: postgres:16
+    container_name: postgres-container-my
+    environment:
+      POSTGRES_USER: hyoyoung
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: hyoyoung_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+    #   postgres:
+    # image: postgres:16
+    # container_name: postgres-db
+    # environment:
+    #   POSTGRES_USER: admin
+    #   POSTGRES_PASSWORD: 1234
+    #   POSTGRES_DB: ai_db
+    # ports:
+    #   - "5432:5432"
+    # volumes:
+    #   - postgres_data:/var/lib/postgresql/data
