@@ -25,8 +25,7 @@ app.add_middleware(
     secret_key=os.getenv("SESSION_SECRET_KEY"),
     same_site="lax",
     https_only=False, 
-    
-    )
+)
 
 app.include_router(auth.router)
 app.include_router(document.router)

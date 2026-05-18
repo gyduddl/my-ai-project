@@ -12,6 +12,8 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from celery_app import process_document
+from celery.result import AsyncResult
+from celery_app import celery_app
 
 Base.metadata.create_all(bind=engine)
 
@@ -75,9 +77,6 @@ async def upload_document(
 
     try:
         extracted_text = "추출된 텍스트 내용..." # !! 추후ocr로 추출한 데이터로 대체
-        # summary_result = "요약된 문서 내용입니다."
-        # category_result = DocCategory.LEGAL
-        # category_result = "LEGAL"
         file_id = uuid.uuid4()
 
         # 2. DOCUMENT_RECORDS 테이블에 저장
@@ -95,8 +94,10 @@ async def upload_document(
         db.add(new_record)
         db.commit()
 
-        # celery 작업 큐 관리
-        process_document.delay(str(file_id))
+        result = process_document.delay(str(file_id))
+        new_record.task_id = str(result.id)
+        db.commit()
+        
 
         # 3. 규격에 맞춘 JSON 응답
         return {
@@ -112,20 +113,32 @@ async def upload_document(
         raise HTTPException(status_code=422, detail=str(e))
     
 # 완료 여부 확인 API
-@router.get("/task/{file_id}")
+@router.get("/task/{file_id}/progress")
 def get_task_status(file_id:str, db:Session=Depends(get_db)):
     get_record = db.query(db_models.DocumentRecord).filter(db_models.DocumentRecord.file_id == file_id).first()
-    if get_record.task_status =="PENDING" or get_record.task_status == "PROCESSING":
-        return{"status":"PROCESSING"}
-    elif get_record.task_status == "SUCCESS":
+    
+    if not get_record or not get_record.task_id:
+        return {"percent": 0, "state": "PENDING"}
+    
+    result = AsyncResult(str(get_record.task_id), app=celery_app) # redis에서 상태 조회
+
+    if result.state == "PENDING":
+        return {"percent":0, "state": "PENDING"}
+    elif result.state == "PROGRESS":
         return {
-            "status":"SUCCESS",
+            "percent":result.info.get('percent', 0),
+            "state" : "PROGRESS"
+        }
+    elif result.state == "SUCCESS":
+        return {
+            "percent": 100,
+            "state":"SUCCESS",
             "summary": get_record.summary,
             "category" : get_record.category,
             "fileId":str(get_record.file_id),
         }
-    elif get_record.task_status=="FAILURE":
-        return {"status":"FAILURE"}
+    elif result.state=="FAILURE":
+        return {"percent":0,"status":"FAILURE"}
 
 # 사용자의 업로드 이력 조회 API
 @router.get("/history")
