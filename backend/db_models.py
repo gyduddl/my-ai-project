@@ -63,13 +63,14 @@ class DocumentRecord(Base):
     __tablename__ = "DOCUMENT_RECORDS"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("USER_INFO.user_id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("USER_INFO.user_id", ondelete="CASCADE"), nullable=False)
     file_id = Column(UUID(as_uuid=True), nullable=False)
     file_name = Column(String(255), nullable=False)
     category = Column(Enum(DocCategory, name="doc_category_enum"),nullable=True)
     summary = Column(Text, nullable=True)
     upload_at = Column(DateTime(timezone=True), server_default=func.now())
     process_at = Column(DateTime(timezone=True), nullable=True)
+    task_status = Column(String(20), default="PENDING")
 
     # 관계 설정: 이 문서는 특정 사용자에게 속함
     owner = relationship("UserInfo", back_populates="documents")

@@ -1,7 +1,7 @@
 import os
 import uuid
 import json
-from fastapi import BackgroundTasks, APIRouter, FastAPI, UploadFile, File, Form, Response, Depends, HTTPException, Request
+from fastapi import APIRouter, FastAPI, UploadFile, File, Form, Response, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime
 import urllib.parse
@@ -11,12 +11,13 @@ from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from celery_app import process_document
 
 Base.metadata.create_all(bind=engine)
 
 router= APIRouter()
 
-# 인증 로직 가정
+# 인증 로직
 def get_current_user(request:Request):
     user_id = request.session.get("user_id")
     print(request.session.items())
@@ -27,7 +28,7 @@ def get_current_user(request:Request):
     return uuid.UUID(user_id)
 
 
-# [POST] 파일 업로드 및 분석 결과 저장 API
+# 파일 업로드 및 분석 결과 저장 API
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -73,11 +74,10 @@ async def upload_document(
     
 
     try:
-        # 1. AI 분석 및 요약 로직 수행 (가정)
-        extracted_text = "추출된 텍스트 내용..."
-        summary_result = "요약된 문서 내용입니다."
+        extracted_text = "추출된 텍스트 내용..." # !! 추후ocr로 추출한 데이터로 대체
+        # summary_result = "요약된 문서 내용입니다."
         # category_result = DocCategory.LEGAL
-        category_result = "LEGAL"
+        # category_result = "LEGAL"
         file_id = uuid.uuid4()
 
         # 2. DOCUMENT_RECORDS 테이블에 저장
@@ -86,29 +86,48 @@ async def upload_document(
             user_id=current_user_id,
             file_id=file_id,
             file_name=file.filename,
-            category=category_result,
-            summary=summary_result,
+            category=None,
+            summary=None,
             upload_at=datetime.now(),
-            process_at=datetime.now()
+            process_at=datetime.now(),
+            task_status="PENDING"
         )
         db.add(new_record)
         db.commit()
+
+        # celery 작업 큐 관리
+        process_document.delay(str(file_id))
 
         # 3. 규격에 맞춘 JSON 응답
         return {
             "fileId": str(file_id),
             "extracted_text": extracted_text,
             "fileName": file.filename,
-            "summary": summary_result,
-            "category": category_result,
             "fileSize": len(file_bytes),
+            "status": "PENDING",
             "create_at": datetime.now().isoformat()
         }
     except Exception as e:
         print(f"Error Detail: {e}")
         raise HTTPException(status_code=422, detail=str(e))
+    
+# 완료 여부 확인 API
+@router.get("/task/{file_id}")
+def get_task_status(file_id:str, db:Session=Depends(get_db)):
+    get_record = db.query(db_models.DocumentRecord).filter(db_models.DocumentRecord.file_id == file_id).first()
+    if get_record.task_status =="PENDING" or get_record.task_status == "PROCESSING":
+        return{"status":"PROCESSING"}
+    elif get_record.task_status == "SUCCESS":
+        return {
+            "status":"SUCCESS",
+            "summary": get_record.summary,
+            "category" : get_record.category,
+            "fileId":str(get_record.file_id),
+        }
+    elif get_record.task_status=="FAILURE":
+        return {"status":"FAILURE"}
 
-# [GET] 사용자의 업로드 이력 조회 API
+# 사용자의 업로드 이력 조회 API
 @router.get("/history")
 async def get_user_history(
     request:Request,
@@ -124,10 +143,9 @@ async def get_user_history(
     
     return history
 
-# [GET] 결과 파일 다운로드 API (PDF/TXT 선택)
+# 결과 파일 다운로드 API (PDF/TXT 선택)
 @router.get("/download/{file_id}")
 async def download_file(file_id:str, format:str, db: Session = Depends(get_db)):
-    # 디비에서 데이터 가져오기 
     record = db.query(db_models.DocumentRecord).filter(db_models.DocumentRecord.file_id == file_id).first()
     if not record:
         raise HTTPException(status_code=404, detail="기록을 찾을 수 없습니다.")
@@ -139,7 +157,7 @@ async def download_file(file_id:str, format:str, db: Session = Depends(get_db)):
         media_type= "text/plain"
         file_name =f"{urllib.parse.quote(record.file_name)}.txt"
     elif format == 'pdf':
-        buffer = BytesIO() # 바구니 만들기
+        buffer = BytesIO()
         p = canvas.Canvas(buffer)
         text_object = p.beginText(40,750)
         # 한글 폰트 설정 필수
