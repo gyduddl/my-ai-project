@@ -7,14 +7,16 @@ from datetime import datetime
 
 load_dotenv()
 
+REDIS_URL = "redis://localhost:6379/0"
+
 celery_app = Celery(
     "worker", # 워커 이름
 
     # broker = os.getenv("REDIS_URL"), # 작업을 전달하는 메시지 큐
     # backend = os.getenv("REDIS_URL") # 작업 결과 저장하는 곳
 
-    broker = "redis://localhost:6379/0",
-    backend = "redis://localhost:6379/0"
+    broker = REDIS_URL,
+    backend = REDIS_URL
 )
 
 # celery 작업으로 등록

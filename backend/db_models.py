@@ -1,9 +1,8 @@
 import enum
-from sqlalchemy import create_engine,Column, Integer, String, DateTime, Text, ForeignKey, Enum, Boolean
+from sqlalchemy import create_engine,Column, String, DateTime, Text, ForeignKey, Enum, Boolean
 from sqlalchemy.orm import sessionmaker,declarative_base, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
-# from database import Base
 from datetime import datetime
 from dotenv import load_dotenv
 import os
@@ -13,26 +12,39 @@ from enum import Enum as PyEnum
 
 load_dotenv()
 
-DB_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DB_URL, echo=True)
+# 도커용
+DATABASE_URL = "postgresql://admin:1234@postgres:5432/ai_db"
+
+# 로컬용
+# DATABASE_URL = "postgresql://admin:1234@localhost:5432/ai_db"
+
+engine = create_engine(DATABASE_URL, echo=True)
 Session = sessionmaker(bind=engine)
+# DB_URL = os.getenv("DATABASE_URL")
+# engine = create_engine(DB_URL, echo=True)
+# Session = sessionmaker(bind=engine)
 
 Base = declarative_base()
 
 def get_db():
-    db = Session()
+    db = Session() # db 세션 생헝
     try:
-        yield db # 함수의 실행을 일시중지하고 값을 호출자에게 반환하는 키워드
+        yield db # 함수의 실행을 일시중지하고 값을 호출자에게 반환하는 키워드, api 컨트롤러에 세션 전달 및 대기
     finally:
-        db.close()
+        db.close() # api 요청 처리 완료 후 세션 종류 
 
 # 1. 카테고리 Enum 정의
 class DocCategory(enum.Enum):
-    REPORT = "REPORT"
-    BUSINESS = "BUSINESS"
-    ACADEMIC = "ACADEMIC"
-    LEGAL = "LEGAL"
-    ETC = "ETC"
+    TECH = "기술/개발문서"
+    LEGAL = "법률/판례"
+    PROPOSAL = "기획안/제안서"
+    BUSINESS = "경영/비즈니스"
+    ACADEMIC = "교육/학술"
+    ADMIN = "행정/공공문서"
+    LIFE = "생활/가정"
+    FINANCE = "금융/회계"
+    MEDICAL = "의료/건강"
+    ETC = "기타/미분류"
 
 class DocLength(str, Enum):
     SHORT= "SHORT" 
@@ -71,7 +83,6 @@ class DocumentRecord(Base):
     upload_at = Column(DateTime(timezone=True), server_default=func.now())
     process_at = Column(DateTime(timezone=True), nullable=True)
     task_status = Column(String(20), default="PENDING")
-    task_id = Column(String, nullable=True)
 
     # 관계 설정: 이 문서는 특정 사용자에게 속함
     owner = relationship("UserInfo", back_populates="documents")

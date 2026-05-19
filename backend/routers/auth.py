@@ -2,11 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from db_models import UserInfo, get_db
+from db import UserInfo, get_db,Base,engine
 import bcrypt
 
 
 router = APIRouter()
+
+Base.metadata.create_all(bind=engine)
 
 # 스키마
 class UserCreate(BaseModel):
