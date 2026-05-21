@@ -38,16 +38,11 @@ async def process_document(file_id, file_bytes ,db:Session):
             "percent": 10,
             "state" : "PROGRESS"
         })
-        # (file_bytes 전달 x, file 자체 넘기기, 프론트에서 받은대로 주기)--------
-        # -------OCR 함수로 대체 
-
-        print(f"웹소켓 들어가기지전에 바이트 확인 . 3 타입 확인 : ${type(file_bytes)}")
+        # ocr 
         extracted_text = await run_in_threadpool(
             process_pdf,
             file_bytes
         )
-        print(f"ocr 결과 : ${extracted_text} 타입 : ${type(extracted_text)}")
-        # ----------------------------
 
         await manager.send(file_id,{
             "percent": 40,
@@ -60,17 +55,12 @@ async def process_document(file_id, file_bytes ,db:Session):
             "state" : "PROGRESS",
         })
 
-        # -------LLM 함수로 대체 --------
 
-        print(f"llm 추출 전, ${type(extracted_text[0])}")
-        
+        # llm 
         llm_result= await run_in_threadpool(subtract_text,extracted_text[0]) # 문자열로 들어옴
         llm_result = json.loads(llm_result)
-        print(f"llm 추출 타입 :${type(llm_result)} \n ${llm_result['category'], llm_result['summary']}")
-        # category="REPORT"
         category=llm_result["category"]
         summary = llm_result["summary"]
-        # ----------------------------
 
         await manager.send(file_id,{
             "percent": 90,
@@ -79,7 +69,6 @@ async def process_document(file_id, file_bytes ,db:Session):
         
         now = datetime.now()
 
-        # 💡 record가 정상적으로 존재할 때만 DB 데이터를 업데이트합니다.
         if record:
             record.summary =summary
             record.category = DocCategory(llm_result["category"])

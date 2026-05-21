@@ -28,7 +28,7 @@ interface WebhookMessage{
 
 function MainPage() {
   // server url
-  const server_url :string= "http://localhost:8000";
+  const server_url :string= import.meta.env.VITE_API_URL;
 
   // 상태 타입 지정
   const [summaryData, setSummaryData] = useState<SummaryData>({
@@ -55,7 +55,7 @@ function MainPage() {
     formData.append('style', 'STYLE1');
 
      try {
-      const response = await axios.post(`${server_url}/upload`, formData, {
+      const response = await axios.post(`http://${server_url}/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         withCredentials: true
       });
@@ -73,7 +73,7 @@ function MainPage() {
       setIsProcessing(true);
       setIsProcess( {percent: 0, state: "PENDING" })
 
-      const ws = new WebSocket(`ws://localhost:8000/ws/${fileId}`)
+      const ws = new WebSocket(`ws://${server_url}/ws/${fileId}`)
       wsRef.current = ws;
 
       ws.onerror = (event: Event) => {
@@ -131,7 +131,7 @@ function MainPage() {
 
     try {
       const response = await axios({
-        url: `${server_url}/download/${summaryData.fileID}`,
+        url: `http://${server_url}/download/${summaryData.fileID}`,
         method: 'GET',
         params: { format: format },
         responseType: 'blob',

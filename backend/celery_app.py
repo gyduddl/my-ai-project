@@ -7,7 +7,7 @@ from datetime import datetime
 
 load_dotenv()
 
-REDIS_URL = "redis://localhost:6379/0"
+REDIS_URL = os.getenv("REDIS_URL")
 
 celery_app = Celery(
     "worker", # 워커 이름

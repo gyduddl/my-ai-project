@@ -7,31 +7,27 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 import uuid
+from uuid import UUID as PyUUID
 from enum import Enum as PyEnum
+from pydantic import BaseModel
 
 
 load_dotenv()
 
-# 도커용
-DATABASE_URL = "postgresql://admin:1234@postgres:5432/ai_db"
-
-# 로컬용
-# DATABASE_URL = "postgresql://admin:1234@localhost:5432/ai_db"
-
-engine = create_engine(DATABASE_URL, echo=True)
-Session = sessionmaker(bind=engine)
-# DB_URL = os.getenv("DATABASE_URL")
-# engine = create_engine(DB_URL, echo=True)
+# engine = create_engine(DATABASE_URL, echo=True)
 # Session = sessionmaker(bind=engine)
+DB_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DB_URL, echo=True)
+Session = sessionmaker(bind=engine)
 
 Base = declarative_base()
 
 def get_db():
-    db = Session() # db 세션 생헝
+    db = Session()
     try:
-        yield db # 함수의 실행을 일시중지하고 값을 호출자에게 반환하는 키워드, api 컨트롤러에 세션 전달 및 대기
+        yield db 
     finally:
-        db.close() # api 요청 처리 완료 후 세션 종류 
+        db.close()
 
 # 1. 카테고리 Enum 정의
 class DocCategory(enum.Enum):
@@ -46,6 +42,7 @@ class DocCategory(enum.Enum):
     MEDICAL = "의료/건강"
     ETC = "기타/미분류"
 
+# 2. 스키마
 class DocLength(str, Enum):
     SHORT= "SHORT" 
     MIDDLE= "MIDDLE"
@@ -54,6 +51,13 @@ class DocLength(str, Enum):
 class styleEnum(str, Enum):
     STYLE1='1'
     STYLE2='2'    
+
+class ItemSearch(BaseModel):
+    id : PyUUID # UUID로 설정 넣어놨으니
+    file_name : str
+
+    class Config: # orm_mode: db안에서 알아서 json 데이터로 자동 반환
+        from_attributes = True
 
 # 2. 사용자 정보 테이블 모델
 class UserInfo(Base):

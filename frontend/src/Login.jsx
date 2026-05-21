@@ -7,9 +7,11 @@ export default function Login({ onLoginSuccess }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
+  let env_url =import.meta.env.VITE_API_URL;
+
   const handleLogin = async () => {
     try {
-      const res = await axios.post("http://localhost:8080/login", 
+      const res = await axios.post(`http://${env_url}/login`, 
         {email:email, password:password},
         {withCredentials:true}
       );
@@ -21,7 +23,7 @@ export default function Login({ onLoginSuccess }) {
 
   const handleRegister = async () => {
     try {
-      await axios.post("http://localhost:8080/register", { email, password });
+      await axios.post(`http://${env_url}/register`, { email, password });
       setIsRegister(false);
       setError("회원가입 완료! 로그인해주세요.");
       window.location.href="/"

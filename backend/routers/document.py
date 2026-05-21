@@ -1,21 +1,20 @@
 import os
 import uuid
 import json
-from fastapi import APIRouter, WebSocketDisconnect, WebSocket, UploadFile, File, Form, Response, Depends, HTTPException, Request
+from typing import List, Optional
+from fastapi import APIRouter, WebSocketDisconnect, WebSocket, UploadFile, File, Form, Response, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
 import urllib.parse
-from db import get_db, engine, styleEnum, DocLength, Base, Session, DocumentRecord
+from db import get_db, engine, styleEnum, DocLength, Base, Session, DocumentRecord, ItemSearch
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.utils import simpleSplit
 import asyncio
 from websocket import process_document, manager
-import pymupdf
-from ollama_client import subtract_text
-from util.file_reader2 import process_pdf
-from starlette.concurrency import run_in_threadpool
+import unicodedata 
 
 
 # 파일 임시 저장소 
@@ -29,7 +28,6 @@ router= APIRouter()
 # 인증 로직
 def get_current_user(request:Request):
     user_id = request.session.get("user_id")
-    print(request.session.items())
 
     if not user_id:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
@@ -46,61 +44,6 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user_id: uuid.UUID = Depends(get_current_user) # 인증 로직 가정
     ):
-    print("뭔지 모르겠지만 뭐가 나와야 하지...")
-    somting ="""
-        너는 문서 분류 및 요약 엔진이다.
-
-        반드시 아래 규칙을 지켜라.
-
-        [작업]
-        INPUT 문서를 읽고 category와 summary를 생성한다.
-
-        [category 선택 규칙]
-        category는 반드시 CATEGORY_LIST 중 정확히 하나를 그대로 복사한다.
-        CATEGORY_LIST에 없는 값은 절대 출력하지 않는다.
-        category를 번역하거나, 줄이거나, 띄어쓰기를 바꾸거나, 새로 만들지 않는다.
-        판단이 애매하면 "기타/미분류"를 선택한다.
-
-        [CATEGORY_LIST]
-
-        [summary 작성 규칙]
-        summary는 INPUT에 있는 내용만 근거로 작성한다.
-        INPUT에 없는 정보, 추측, 외부 지식은 절대 추가하지 않는다.
-        summary는 한국어로 작성한다.
-        summary는 2문장 이상 5문장 이하로 작성한다.
-        문서의 핵심 주제, 목적, 주요 내용을 포함한다.
-        원문 의미를 과장하거나 바꾸지 않는다.
-
-        [출력 규칙]
-        반드시 JSON 객체만 출력한다.
-        JSON 밖에 설명, 문장, 코드블록, 마크다운을 출력하지 않는다.
-        키는 반드시 category와 summary만 사용한다.
-
-        [출력 예시]
-        
-
-        [INPUT]
-        """
-    print(f"llm에 들어가는 거 어떤 타입? ${type(somting)}")
-    llm_text = await run_in_threadpool(subtract_text,somting)
-    print(f"llm 잘 나아아아아오냐${llm_text}")
-    # print("ocr 시작")
-    # print(f"들어온 파일 ${file}, 타입 확인 1. ${type(file)}")
-    # #ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-    # file_send :bytes= await file.read()
-    # print(f"바이트인지 확인 2. ${len(file_send)}")
-    # print(f"타입 확인 2. ${type(file_send)}")
-    # extracted_text = await run_in_threadpool(
-    #     process_pdf,
-    #     file_send
-    # )
-    # print(f"추출된 데이터 :${extracted_text}")
-    # #ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ
-    
-    # print(f"출력결과 가져오기 : ${llm_text}")
-    # check_file = await file.read()
-    # doc = pymupdf.open(stream =check_file, filetype="pdf")
-    # print(f"파일 확인${doc},타입 ${type(check_file)}")    
 
     ALLOWED_EXTENSIONS = ('.pdf', '.docx', '.doc', '.hwp', '.ppt', '.pptx', '.jpg', '.jpeg', '.png', '.gif', '.webp')
 
@@ -113,18 +56,15 @@ async def upload_document(
 
     file_id = uuid.uuid4()
     file_bytes :bytes= await file.read()
-    print(f"웹소켓 들어가기지전에 바이트 확인 . 1 ${type(file_bytes)} ")
 
-     # 파일 바이트를 메모리에 임시저장 => 파일 자체를 저장해야 할듯
+     # 파일 바이트를 메모리에 임시저장
     temp_files[str(file_id)] = file_bytes
 
-    print("잘들어가지나1")
     # 파일 검증
     if len(file_bytes)> MAX_SIZE:
         raise HTTPException(status_code=422, detail="파일 용량이 10MB를 초과했습니다.")
     
     await file.seek(0)
-    print("잘들어가지나2")
     ALLOWED_MIME_TYPES = {
     '.pdf': 'application/pdf',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -138,13 +78,11 @@ async def upload_document(
     '.gif': 'image/gif',
     '.webp': 'image/webp',
     }
-    print("잘들어가지나3")
     if file.content_type not in ALLOWED_MIME_TYPES.values():
         raise HTTPException(status_code=422, detail='파일 내영이 확장자와 일치하지 않습니다.')
     
 
     try:
-        print("잘들어가지나4")
         # 2. DOCUMENT_RECORDS 테이블에 저장
         new_record = DocumentRecord(
             id=str(uuid.uuid4()),
@@ -178,13 +116,10 @@ async def websocket_endpoint(
     websocket: WebSocket,
     file_id:str
 ):
-    print("잘들어가지나6")
     await manager.connect(file_id, websocket)
     with Session() as db:
         try:
-            print("잘들어가지나7")
             file_bytes = temp_files.get(str(file_id), None) # 임시 저장된 파일 바이트 꺼내오기
-            print(f"웹소켓 들어가기지전에 바이트 확인 . 2 타입 확인 : ${type(file_bytes)}")
 
             if not file_bytes:
                 await manager.send(file_id, {"state":"FAILURE", "error": "파일을 찾을 수 없습니당!"})
@@ -210,13 +145,10 @@ async def get_user_history(
     db: Session = Depends(get_db)
 ):
     user_id =request.session.get("user_id")
-    print(request.session.items())
-    print(f"로그인 정보 : {user_id, DocumentRecord.user_id}")
 
     if not user_id:
         raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
     history =db.query(DocumentRecord).filter(DocumentRecord.user_id==user_id).all()
-    
     return history
 
 # 결과 파일 다운로드 API (PDF/TXT 선택)
@@ -242,14 +174,21 @@ async def download_file(file_id:str, format:str, db: Session = Depends(get_db)):
         pdfmetrics.registerFont(TTFont("NanumGothic", FONT_PATH))
         text_object.setFont("NanumGothic",10)
 
-        for line in content.split('\n'):
-            text_object.textLine(line) # textLine 한줄 쓰고 다음줄로 가자
-        
-        p.drawText(text_object) # 텍스트를 도화지에 인쇄
-        p.showPage() # 현재 페이지 끝
-        p.save() # 파일 저장
 
-        file_content = buffer.getvalue() #바구니를 복사, 데이터 가져옴
+        usable_width = 594 - 80 # A4 너비 - 양옆 너비
+
+
+        for line in content.split('\n'):
+            # 자동 줄바꿈
+            text_line = simpleSplit(line, "NanumGothic",10, usable_width)
+            for text in text_line:
+                text_object.textLine(text) 
+        
+        p.drawText(text_object) 
+        p.showPage() 
+        p.save() 
+
+        file_content = buffer.getvalue()
         buffer.close()
         media_type = "application/pdf"
         file_name = f"{urllib.parse.quote(record.file_name)}.pdf"
@@ -264,3 +203,29 @@ async def download_file(file_id:str, format:str, db: Session = Depends(get_db)):
     )
 
 
+@router.get('/search', response_model = List[ItemSearch])
+async def search_file(
+    request : Request,
+    keyword: Optional[str] = Query(None, min_length=2), # 아무것도 없어도 되며, 최소 2글자는 적어야 한다.
+    db:Session = Depends(get_db)
+):
+    
+    if not hasattr(request, "session") or request.session is None:
+        print("에러: 세션 미들웨어가 설정되지 않았거나 세션이 없습니다.")
+        raise HTTPException(status_code=401, detail="세션 정보가 없습니다. 다시 로그인 해주세요.")
+
+    user_id = request.session.get("user_id")
+
+    if not user_id:
+        raise HTTPException(status_code=401, detail="로그인이 필요한 서비스입니다.")
+    
+    clean_text = unicodedata.normalize('NFC', keyword)
+    results = []
+    all_records = db.query(DocumentRecord).filter(DocumentRecord.user_id == uuid.UUID(user_id)).all()
+    if not keyword:
+        return all_records
+    for doc in all_records:
+        normalized_file_name = unicodedata.normalize('NFC', doc.file_name)
+        if clean_text in normalized_file_name:
+            results.append(doc)
+    return results
